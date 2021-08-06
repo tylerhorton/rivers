@@ -6,6 +6,7 @@ struct TestTransport {
     events: Vec<(Vec<u8>, Vec<u8>)>,
     idx: RefCell<usize>,
 }
+
 impl TestTransport {
     pub fn new(events: Vec<(Vec<u8>, Vec<u8>)>) -> Self {
         TestTransport {
@@ -14,8 +15,9 @@ impl TestTransport {
         }
     }
 }
+
 impl Transport for TestTransport {
-    fn consume(&self, topic: &str) -> (&[u8], &[u8]) {
+    fn consume(&self, topic: &str) -> (Option<&[u8]>, Option<&[u8]>) {
         loop {
             thread::sleep(time::Duration::from_secs(1));
 
@@ -26,19 +28,35 @@ impl Transport for TestTransport {
                     topic, k, v
                 );
                 *idx += 1;
-                return (k.as_slice(), v.as_slice());
+                return (Some(k.as_slice()), Some(v.as_slice()));
             } else {
                 *idx = 0;
             }
         }
     }
 
-    fn produce(&self, topic: &str, key: Vec<u8>, value: Vec<u8>) {
+    fn produce(&self, topic: &str, key: Option<Vec<u8>>, value: Option<Vec<u8>>) {
         println!(
             "Producing to topic {} with key {:?} and value {:?}",
             topic, key, value
         );
     }
+}
+
+fn bytes_to_u8(data: &[u8]) -> Result<u8, String> {
+    if data.is_empty() {
+        Err("No data for u8 deserializer".to_string())
+    } else {
+        Ok(data[0])
+    }
+}
+
+fn u8_to_bytes(val: &u8) -> Vec<u8> {
+    vec![*val]
+}
+
+fn u16_to_bytes(val: &u16) -> Vec<u8> {
+    vec![(*val & 0x00FF) as u8, ((*val & 0xFF00) >> 8) as u8]
 }
 
 fn is_value_odd(e: &Event<u8, u8>) -> bool {
@@ -63,10 +81,10 @@ fn main() {
     let rivers = Rivers::new(transport);
 
     let stream = rivers
-        .topic::<u8, u8>("foo")
+        .topic("foo", bytes_to_u8, bytes_to_u8)
         .filter(is_value_odd)
         .map(square_value)
-        .to("bar");
+        .to("bar", u8_to_bytes, u16_to_bytes);
 
     loop {
         stream.next();
