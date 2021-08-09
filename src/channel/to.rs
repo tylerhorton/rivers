@@ -1,7 +1,7 @@
 use crate::channel::Channel;
 use crate::event::Event;
+use crate::serde::Serializer;
 use crate::transport::Transport;
-use crate::Serializer;
 
 pub struct To<'a, T: Transport, C: Channel<'a, T>, KS, VS>
 where
@@ -35,14 +35,6 @@ where
             value_serializer,
         }
     }
-
-    fn produce(&self, event: &Event<C::Key, C::Value>) {
-        self.transport.produce(
-            &self.topic,
-            event.key.as_ref().map(&self.key_serializer),
-            event.value.as_ref().map(&self.value_serializer),
-        );
-    }
 }
 
 impl<'a, T: Transport, C: Channel<'a, T>, KS, VS> Channel<'a, T> for To<'a, T, C, KS, VS>
@@ -55,11 +47,17 @@ where
 
     fn next(&self) -> Event<Self::Key, Self::Value> {
         let e = self.channel.next();
-        self.produce(&e);
+        self.produce(
+            &self.topic,
+            &e.key,
+            &e.value,
+            &self.key_serializer,
+            &self.value_serializer,
+        );
         e
     }
 
-    fn get_transport(&self) -> &'a T {
+    fn transport(&self) -> &'a T {
         self.transport
     }
 }

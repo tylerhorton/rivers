@@ -1,19 +1,15 @@
 pub mod channel;
 pub mod event;
+pub mod serde;
 pub mod transport;
 
 use channel::Channel;
 use event::Event;
+use serde::{deserialize, Deserializer};
 use transport::Transport;
 
 use std::marker::PhantomData;
 use std::{thread, time};
-
-pub trait Serializer<T>: Fn(&T) -> Vec<u8> {}
-impl<T, F> Serializer<T> for F where F: Fn(&T) -> Vec<u8> {}
-
-pub trait Deserializer<T>: Fn(&[u8]) -> Result<T, String> {}
-impl<T, F> Deserializer<T> for F where F: Fn(&[u8]) -> Result<T, String> {}
 
 pub struct Rivers<T: Transport> {
     transport: T,
@@ -86,21 +82,8 @@ impl<'a, T: Transport, K, V, KD: Deserializer<K>, VD: Deserializer<V>> Channel<'
         )
     }
 
-    fn get_transport(&self) -> &'a T {
+    fn transport(&self) -> &'a T {
         self.transport
-    }
-}
-
-fn deserialize<T, D: Deserializer<T>>(data: Option<&[u8]>, deserializer: &D) -> Option<T> {
-    match data {
-        Some(v) => match (deserializer)(v) {
-            Ok(vr) => Some(vr),
-            Err(e) => {
-                println!("{}", e);
-                None
-            }
-        },
-        None => None,
     }
 }
 

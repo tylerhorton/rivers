@@ -34,7 +34,7 @@ where
         }
     }
 
-    fn get_transport(&self) -> &'a T {
+    fn transport(&self) -> &'a T {
         self.transport
     }
 }
