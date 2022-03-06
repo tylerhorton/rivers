@@ -1,96 +1,64 @@
-pub mod channel;
+pub mod adapters;
 pub mod event;
-pub mod serde;
-pub mod transport;
+pub mod handler;
+pub mod stream;
 
-use channel::Channel;
-use event::Event;
-use serde::{deserialize, Deserializer};
-use transport::Transport;
+use futures::future;
+use std::collections::HashMap;
+use tokio::sync::broadcast::{self, Receiver, Sender};
+use tokio::task::JoinHandle;
 
-use std::marker::PhantomData;
-use std::{thread, time};
+use crate::event::{Event, FromEvent};
+use crate::handler::Handler;
+use crate::stream::StreamSource;
 
-pub struct Rivers<T: Transport> {
-    transport: T,
+pub struct Rivers {
+    events: Vec<Event>,
+    topics: HashMap<String, Sender<Event>>,
+    join_handles: Vec<JoinHandle<()>>,
 }
 
-impl<T: Transport> Rivers<T> {
-    pub fn new(transport: T) -> Self {
-        Rivers { transport }
-    }
-
-    pub fn run(&self) -> ! {
-        loop {
-            thread::sleep(time::Duration::from_secs(1));
+impl Rivers {
+    pub fn new(events: Vec<Event>) -> Self {
+        Rivers {
+            events,
+            topics: HashMap::new(),
+            join_handles: vec![],
         }
     }
 
-    pub fn topic<'a, K, V, KD: Deserializer<K>, VD: Deserializer<V>>(
-        &'a self,
-        topic: &str,
-        key_deserializer: KD,
-        value_deserializer: VD,
-    ) -> Topic<'a, T, K, V, KD, VD> {
-        Topic::new(
-            &self.transport,
-            topic.to_string(),
-            key_deserializer,
-            value_deserializer,
-        )
+    pub fn stream<S, H, T>(mut self, topic: S, handler: H) -> Self
+    where
+        S: AsRef<str>,
+        H: Handler<T>,
+        T: FromEvent + Clone + Send + 'static,
+    {
+        let rx = self.get_channel_for_topic(topic);
+
+        let handle = tokio::spawn(handler.call(StreamSource::new(rx)));
+
+        self.join_handles.push(handle);
+        self
     }
-}
 
-pub struct Topic<'a, T: Transport, K, V, KD: Deserializer<K>, VD: Deserializer<V>> {
-    transport: &'a T,
-    topic: String,
-    key_deserializer: KD,
-    value_deserializer: VD,
-    _key_marker: PhantomData<*const K>,
-    _val_marker: PhantomData<*const V>,
-}
-
-impl<'a, T: Transport, K, V, KD: Deserializer<K>, VD: Deserializer<V>> Topic<'a, T, K, V, KD, VD> {
-    pub(crate) fn new(
-        transport: &'a T,
-        topic: String,
-        key_deserializer: KD,
-        value_deserializer: VD,
-    ) -> Self {
-        Topic {
-            transport,
-            topic,
-            key_deserializer,
-            value_deserializer,
-            _key_marker: PhantomData,
-            _val_marker: PhantomData,
+    pub async fn run(self) {
+        for (_, sender) in self.topics {
+            for e in &self.events {
+                sender.send(e.clone()).unwrap();
+            }
         }
-    }
-}
 
-impl<'a, T: Transport, K, V, KD: Deserializer<K>, VD: Deserializer<V>> Channel<'a, T>
-    for Topic<'a, T, K, V, KD, VD>
-{
-    type Key = K;
-    type Value = V;
-
-    fn next(&self) -> Event<Self::Key, Self::Value> {
-        let (k, v) = self.transport.consume(&self.topic);
-        Event::new(
-            deserialize(k, &self.key_deserializer),
-            deserialize(v, &self.value_deserializer),
-        )
+        future::join_all(self.join_handles).await;
     }
 
-    fn transport(&self) -> &'a T {
-        self.transport
-    }
-}
+    fn get_channel_for_topic(&mut self, topic: impl AsRef<str>) -> Receiver<Event> {
+        if let Some(tx) = self.topics.get(topic.as_ref()) {
+            return tx.subscribe();
+        }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
+        let (tx, rx) = broadcast::channel(16);
+        self.topics.insert(topic.as_ref().to_string(), tx);
+
+        rx
     }
 }

@@ -5,3 +5,9 @@ authors = ["Tyler Horton <tylerhortonc@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+futures = "0.3.21"
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7.0"
+pin-project = "1"
+async-trait = "0.1.52"
+frunk = "0.4.0"
