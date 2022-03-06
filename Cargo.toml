@@ -6,6 +6,7 @@ edition = "2018"
 homepage = "https://github.com/tylerhorton/rivers"
 repository = "https://github.com/tylerhorton/rivers"
 description = "A Rust streams processing library."
+license = "MIT"
 
 [dependencies]
 futures = "0.3.21"
