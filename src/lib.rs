@@ -3,14 +3,14 @@ pub mod event;
 pub mod handler;
 pub mod stream;
 
+use crate::event::Event;
+use crate::handler::Handler;
+use crate::stream::StreamSource;
+
 use futures::future;
 use std::collections::HashMap;
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
-
-use crate::event::Event;
-use crate::handler::Handler;
-use crate::stream::StreamSource;
 
 pub struct Rivers {
     events: Vec<Event>,
@@ -35,8 +35,8 @@ impl Rivers {
         let rx = self.get_channel_for_topic(topic);
 
         let handle = tokio::spawn(handler.call(StreamSource::new(rx)));
-
         self.join_handles.push(handle);
+
         self
     }
 
@@ -52,12 +52,11 @@ impl Rivers {
 
     fn get_channel_for_topic(&mut self, topic: impl AsRef<str>) -> Receiver<Event> {
         if let Some(tx) = self.topics.get(topic.as_ref()) {
-            return tx.subscribe();
+            tx.subscribe()
+        } else {
+            let (tx, rx) = broadcast::channel(16);
+            self.topics.insert(topic.as_ref().to_string(), tx);
+            rx
         }
-
-        let (tx, rx) = broadcast::channel(16);
-        self.topics.insert(topic.as_ref().to_string(), tx);
-
-        rx
     }
 }

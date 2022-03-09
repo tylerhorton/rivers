@@ -1,7 +1,7 @@
+use crate::stream::StreamSource;
+
 use async_trait::async_trait;
 use futures::Future;
-
-use crate::stream::StreamSource;
 
 #[async_trait]
 pub trait Handler: Send + 'static {
