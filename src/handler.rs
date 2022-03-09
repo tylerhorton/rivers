@@ -1,22 +1,20 @@
 use async_trait::async_trait;
 use futures::Future;
 
-use crate::event::FromEvent;
 use crate::stream::StreamSource;
 
 #[async_trait]
-pub trait Handler<T>: Send + 'static {
-    async fn call(self, chan: StreamSource<T>);
+pub trait Handler: Send + 'static {
+    async fn call(self, s: StreamSource);
 }
 
 #[async_trait]
-impl<T, F, Fut> Handler<T> for F
+impl<F, Fut> Handler for F
 where
-    T: FromEvent + Clone + Send + 'static,
-    F: Fn(StreamSource<T>) -> Fut + Send + Sync + 'static,
+    F: Fn(StreamSource) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    async fn call(self, chan: StreamSource<T>) {
-        self(chan).await
+    async fn call(self, s: StreamSource) {
+        self(s).await
     }
 }

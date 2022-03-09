@@ -6,7 +6,6 @@ use crate::stream::next::Next;
 use futures::Stream as FuturesStream;
 use pin_project::pin_project;
 use std::{
-    marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -14,8 +13,9 @@ use tokio::sync::broadcast::{error::RecvError, Receiver};
 use tokio_util::sync::ReusableBoxFuture;
 
 pub trait Stream: FuturesStream {
-    fn next(&mut self) -> Next<'_, Self>
+    fn next<T>(&mut self) -> Next<'_, Self, T>
     where
+        T: FromEvent,
         Self: Unpin,
     {
         Next::new(self)
@@ -47,35 +47,37 @@ pub trait Stream: FuturesStream {
 impl<T: ?Sized> Stream for T where T: FuturesStream {}
 
 #[pin_project]
-pub struct StreamSource<T> {
-    chan: Receiver<Event>,
-    _type_marker: PhantomData<fn() -> T>,
+pub struct StreamSource {
+    inner: ReusableBoxFuture<'static, (Result<Event, RecvError>, Receiver<Event>)>,
 }
-impl<T> StreamSource<T> {
+
+impl StreamSource {
     pub fn new(chan: Receiver<Event>) -> Self {
         StreamSource {
-            chan,
-            _type_marker: PhantomData,
+            inner: ReusableBoxFuture::new(next_event(chan)),
         }
     }
 }
-impl<T> FuturesStream for StreamSource<T>
-where
-    T: FromEvent + Clone + Send + 'static,
-{
-    type Item = T;
+
+impl FuturesStream for StreamSource {
+    type Item = Event;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();
+        let (result, rx) = futures::ready!(this.inner.poll(cx));
+        this.inner.set(next_event(rx));
 
-        let mut fut = ReusableBoxFuture::new(async { this.chan.recv().await });
-
-        match futures::ready!(fut.poll(cx)) {
-            Ok(mut next) => Poll::Ready(Some(T::from_event(&mut next))),
+        match result {
+            Ok(next) => Poll::Ready(Some(next)),
             Err(RecvError::Closed) => Poll::Ready(None),
             Err(RecvError::Lagged(_)) => Poll::Pending,
         }
     }
+}
+
+async fn next_event(mut chan: Receiver<Event>) -> (Result<Event, RecvError>, Receiver<Event>) {
+    let result = chan.recv().await;
+    (result, chan)
 }
 
 // pub struct Map<S, F> {

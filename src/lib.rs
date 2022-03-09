@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use tokio::sync::broadcast::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
 
-use crate::event::{Event, FromEvent};
+use crate::event::Event;
 use crate::handler::Handler;
 use crate::stream::StreamSource;
 
@@ -27,11 +27,10 @@ impl Rivers {
         }
     }
 
-    pub fn stream<S, H, T>(mut self, topic: S, handler: H) -> Self
+    pub fn stream<S, H>(mut self, topic: S, handler: H) -> Self
     where
         S: AsRef<str>,
-        H: Handler<T>,
-        T: FromEvent + Clone + Send + 'static,
+        H: Handler,
     {
         let rx = self.get_channel_for_topic(topic);
 
